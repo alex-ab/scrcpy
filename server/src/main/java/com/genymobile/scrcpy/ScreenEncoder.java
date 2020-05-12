@@ -9,8 +9,8 @@ import android.media.MediaFormat;
 import android.os.IBinder;
 import android.view.Surface;
 
-import java.io.FileDescriptor;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,7 +45,7 @@ public class ScreenEncoder implements Device.RotationListener {
         return rotationChanged.getAndSet(false);
     }
 
-    public void streamScreen(Device device, FileDescriptor fd) throws IOException {
+    public void streamScreen(Device device, OutputStream stream) throws IOException {
         Workarounds.prepareMainLooper();
         Workarounds.fillAppInfo();
 
@@ -71,7 +71,7 @@ public class ScreenEncoder implements Device.RotationListener {
                 setDisplaySurface(display, surface, videoRotation, contentRect, unlockedVideoRect, layerStack);
                 codec.start();
                 try {
-                    alive = encode(codec, fd);
+                    alive = encode(codec, stream);
                     // do not call stop() on exception, it would trigger an IllegalStateException
                     codec.stop();
                 } finally {
@@ -85,7 +85,7 @@ public class ScreenEncoder implements Device.RotationListener {
         }
     }
 
-    private boolean encode(MediaCodec codec, FileDescriptor fd) throws IOException {
+    private boolean encode(MediaCodec codec, OutputStream stream) throws IOException {
         boolean eof = false;
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
@@ -101,10 +101,10 @@ public class ScreenEncoder implements Device.RotationListener {
                     ByteBuffer codecBuffer = codec.getOutputBuffer(outputBufferId);
 
                     if (sendFrameMeta) {
-                        writeFrameMeta(fd, bufferInfo, codecBuffer.remaining());
+                        writeFrameMeta(stream, bufferInfo, codecBuffer.remaining());
                     }
 
-                    IO.writeFully(fd, codecBuffer);
+                    IO.writeFully(stream, codecBuffer);
                 }
             } finally {
                 if (outputBufferId >= 0) {
@@ -116,7 +116,7 @@ public class ScreenEncoder implements Device.RotationListener {
         return !eof;
     }
 
-    private void writeFrameMeta(FileDescriptor fd, MediaCodec.BufferInfo bufferInfo, int packetSize) throws IOException {
+    private void writeFrameMeta(OutputStream stream, MediaCodec.BufferInfo bufferInfo, int packetSize) throws IOException {
         headerBuffer.clear();
 
         long pts;
@@ -132,7 +132,7 @@ public class ScreenEncoder implements Device.RotationListener {
         headerBuffer.putLong(pts);
         headerBuffer.putInt(packetSize);
         headerBuffer.flip();
-        IO.writeFully(fd, headerBuffer);
+        IO.writeFully(stream, headerBuffer);
     }
 
     private static MediaCodec createCodec() throws IOException {

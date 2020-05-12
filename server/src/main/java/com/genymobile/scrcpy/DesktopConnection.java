@@ -18,7 +18,7 @@ public final class DesktopConnection implements Closeable {
     private static final String SOCKET_NAME = "scrcpy";
 
     private final LocalSocket videoSocket;
-    private final FileDescriptor videoFd;
+    private final OutputStream videoOutputStream;
 
     private final LocalSocket controlSocket;
     private final InputStream controlInputStream;
@@ -32,7 +32,7 @@ public final class DesktopConnection implements Closeable {
         this.controlSocket = controlSocket;
         controlInputStream = controlSocket.getInputStream();
         controlOutputStream = controlSocket.getOutputStream();
-        videoFd = videoSocket.getFileDescriptor();
+        videoOutputStream = videoSocket.getOutputStream();
     }
 
     private static LocalSocket connect(String abstractName) throws IOException {
@@ -96,11 +96,11 @@ public final class DesktopConnection implements Closeable {
         buffer[DEVICE_NAME_FIELD_LENGTH + 1] = (byte) width;
         buffer[DEVICE_NAME_FIELD_LENGTH + 2] = (byte) (height >> 8);
         buffer[DEVICE_NAME_FIELD_LENGTH + 3] = (byte) height;
-        IO.writeFully(videoFd, buffer, 0, buffer.length);
+        IO.writeFully(videoOutputStream, buffer, 0, buffer.length);
     }
 
-    public FileDescriptor getVideoFd() {
-        return videoFd;
+    public OutputStream getVideoFd() {
+        return videoOutputStream;
     }
 
     public ControlMessage receiveControlMessage() throws IOException {
