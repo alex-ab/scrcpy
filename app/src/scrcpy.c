@@ -28,6 +28,8 @@
 #include "util/log.h"
 #include "util/net.h"
 
+#include <arpa/inet.h>
+
 static struct server server = SERVER_INITIALIZER;
 static struct screen screen = SCREEN_INITIALIZER;
 static struct fps_counter fps_counter;
@@ -293,6 +295,33 @@ scrcpy(const struct scrcpy_options *options) {
         .control = options->control,
         .display_id = options->display_id,
     };
+
+    server_init(&server);
+
+#ifdef DIRECT_IP_ADDR
+/* XXX */
+    if (options->server_port)
+        server.port = options->server_port;
+    else
+        server.port = 27184;
+
+    if (options->server_remote)
+        server.ip = options->server_remote;
+
+    if (options->server_local) {
+        server.client_listen = true;
+        server.ip = options->server_local;
+    }
+
+    /* XXX only one direction XXX */
+    if ((options->server_local && options->server_remote) ||
+        (!options->server_local && !options->server_remote)) {
+        LOGE("--server-remote or --server-local error");
+        return false;
+    }
+/* XXX */
+#endif
+
     if (!server_start(&server, options->serial, &params)) {
         return false;
     }

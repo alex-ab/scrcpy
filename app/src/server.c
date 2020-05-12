@@ -15,6 +15,9 @@
 #include "util/net.h"
 #include "util/str_util.h"
 
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
 #define SOCKET_NAME "scrcpy"
 #define SERVER_FILENAME "scrcpy-server"
 
@@ -103,6 +106,34 @@ push_server(const char *serial) {
     return process_check_success(process, "adb push");
 }
 
+#ifdef DIRECT_IP_ADDR
+
+static bool
+enable_tunnel_reverse(const char *serial, uint16_t local_port) {
+    (void)serial; (void)local_port;
+    return true;
+}
+
+static bool
+disable_tunnel_reverse(const char *serial) {
+    (void)serial;
+    return true;
+}
+
+static bool
+enable_tunnel_forward(const char *serial, uint16_t local_port) {
+    (void)serial; (void)local_port;
+    return true;
+}
+
+static bool
+disable_tunnel_forward(const char *serial, uint16_t local_port) {
+    (void)serial; (void)local_port;
+    return true;
+}
+
+#else
+
 static bool
 enable_tunnel_reverse(const char *serial, uint16_t local_port) {
     process_t process = adb_reverse(serial, SOCKET_NAME, local_port);
@@ -126,6 +157,7 @@ disable_tunnel_forward(const char *serial, uint16_t local_port) {
     process_t process = adb_forward_remove(serial, local_port);
     return process_check_success(process, "adb forward --remove");
 }
+#endif
 
 static bool
 disable_tunnel(struct server *server) {
@@ -146,6 +178,11 @@ enable_tunnel_reverse_any_port(struct server *server,
                                struct port_range port_range) {
     uint16_t port = port_range.first;
     for (;;) {
+        if (!server->use_adb) {
+            if (!server->client_listen) return false;
+            /* else - net_listen on connection by remote scrcpy server */
+        }
+        else
         if (!enable_tunnel_reverse(server->serial, port)) {
             // the command itself failed, it will fail on any port
             return false;
@@ -157,7 +194,11 @@ enable_tunnel_reverse_any_port(struct server *server,
         // client can listen before starting the server app, so there is no
         // need to try to connect until the server socket is listening on the
         // device.
-        server->server_socket = listen_on_port(port);
+        if (server->use_adb)
+            server->server_socket = listen_on_port(port);
+        else
+            server->server_socket = net_listen(server->ip, server->port, 1);
+
         if (server->server_socket != INVALID_SOCKET) {
             // success
             server->local_port = port;
@@ -196,6 +237,9 @@ enable_tunnel_forward_any_port(struct server *server,
         if (enable_tunnel_forward(server->serial, port)) {
             // success
             server->local_port = port;
+            if (server->use_adb)
+                server->port = port;
+
             return true;
         }
 
@@ -241,6 +285,11 @@ execute_server(struct server *server, const struct server_params *params) {
     sprintf(max_fps_string, "%"PRIu16, params->max_fps);
     sprintf(lock_video_orientation_string, "%"PRIi8, params->lock_video_orientation);
     sprintf(display_id_string, "%"PRIu16, params->display_id);
+#ifdef DIRECT_IP_ADDR
+    char ip_port[6];
+    sprintf(ip_port, "%"PRIu16, server->port);
+    struct in_addr target_ip = { .s_addr = htonl(server->ip) };
+#endif
     const char *const cmd[] = {
         "shell",
         "CLASSPATH=" DEVICE_SERVER_PATH,
@@ -263,11 +312,19 @@ execute_server(struct server *server, const struct server_params *params) {
         bit_rate_string,
         max_fps_string,
         lock_video_orientation_string,
+#ifdef DIRECT_IP_ADDR
+        !server->client_listen ? "true" : "false",
+#else
         server->tunnel_forward ? "true" : "false",
+#endif
         params->crop ? params->crop : "-",
         "true", // always send frame meta (packet boundaries + timestamp)
         params->control ? "true" : "false",
-        display_id_string,
+        display_id_string
+#ifdef DIRECT_IP_ADDR
+        , inet_ntoa(target_ip)
+        , ip_port
+#endif
     };
 #ifdef SERVER_DEBUGGER
     LOGI("Server debugger waiting for a client on device port "
@@ -284,8 +341,8 @@ execute_server(struct server *server, const struct server_params *params) {
 }
 
 static socket_t
-connect_and_read_byte(uint16_t port) {
-    socket_t socket = net_connect(IPV4_LOCALHOST, port);
+connect_and_read_byte(uint32_t const ip, uint16_t const port) {
+    socket_t socket = net_connect(ip, port);
     if (socket == INVALID_SOCKET) {
         return INVALID_SOCKET;
     }
@@ -302,10 +359,10 @@ connect_and_read_byte(uint16_t port) {
 }
 
 static socket_t
-connect_to_server(uint16_t port, uint32_t attempts, uint32_t delay) {
+connect_to_server(uint32_t const ip, uint16_t port, uint32_t attempts, uint32_t delay) {
     do {
         LOGD("Remaining connection attempts: %d", (int) attempts);
-        socket_t socket = connect_and_read_byte(port);
+        socket_t socket = connect_and_read_byte(ip, port);
         if (socket != INVALID_SOCKET) {
             // it worked!
             return socket;
@@ -329,6 +386,11 @@ close_socket(socket_t socket) {
 void
 server_init(struct server *server) {
     *server = (struct server) SERVER_INITIALIZER;
+#ifdef DIRECT_IP_ADDR
+    server->use_adb = false;
+#else
+    server->ip = IPV4_LOCALHOST;
+#endif
 }
 
 static int
@@ -350,6 +412,7 @@ run_wait_server(void *data) {
 bool
 server_start(struct server *server, const char *serial,
              const struct server_params *params) {
+
     server->port_range = params->port_range;
 
     if (serial) {
@@ -430,14 +493,14 @@ server_connect_to(struct server *server) {
         uint32_t attempts = 100;
         uint32_t delay = 100; // ms
         server->video_socket =
-            connect_to_server(server->local_port, attempts, delay);
+            connect_to_server(server->ip, server->port, attempts, delay);
         if (server->video_socket == INVALID_SOCKET) {
             return false;
         }
 
         // we know that the device is listening, we don't need several attempts
         server->control_socket =
-            net_connect(IPV4_LOCALHOST, server->local_port);
+            net_connect(server->ip, server->port);
         if (server->control_socket == INVALID_SOCKET) {
             return false;
         }

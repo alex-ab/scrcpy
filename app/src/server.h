@@ -11,6 +11,10 @@
 #include "common.h"
 #include "util/net.h"
 
+#if 1
+#define DIRECT_IP_ADDR 1
+#endif
+
 struct server {
     char *serial;
     process_t process;
@@ -20,9 +24,13 @@ struct server {
     socket_t video_socket;
     socket_t control_socket;
     struct port_range port_range;
+    uint32_t ip; // IP, either local or remote
+    uint16_t port; // port on server, if local then port == local_port
     uint16_t local_port; // selected from port_range
     bool tunnel_enabled;
     bool tunnel_forward; // use "adb forward" instead of "adb reverse"
+    bool use_adb;
+    bool client_listen;
 };
 
 #define SERVER_INITIALIZER { \
@@ -37,9 +45,13 @@ struct server {
         .first = 0, \
         .last = 0, \
     }, \
+    .ip = 0, \
+    .port = 0, \
     .local_port = 0, \
     .tunnel_enabled = false, \
     .tunnel_forward = false, \
+    .use_adb = true, \
+    .client_listen = false, \
 }
 
 struct server_params {

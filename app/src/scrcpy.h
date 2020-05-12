@@ -38,6 +38,9 @@ struct scrcpy_options {
     bool prefer_text;
     bool window_borderless;
     bool mipmaps;
+    uint32_t server_remote;
+    uint32_t server_local;
+    uint16_t server_port;
 };
 
 #define SCRCPY_OPTIONS_DEFAULT { \
@@ -72,6 +75,9 @@ struct scrcpy_options {
     .prefer_text = false, \
     .window_borderless = false, \
     .mipmaps = true, \
+    .server_remote = 0, \
+    .server_local = 0, \
+    .server_port = 0, \
 }
 
 bool

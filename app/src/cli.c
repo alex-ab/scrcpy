@@ -10,6 +10,8 @@
 #include "util/log.h"
 #include "util/str_util.h"
 
+#include <arpa/inet.h>
+
 void
 scrcpy_print_usage(const char *arg0) {
 #ifdef __APPLE__
@@ -157,6 +159,19 @@ scrcpy_print_usage(const char *arg0) {
         "    --window-height value\n"
         "        Set the initial window width.\n"
         "        Default is 0 (automatic).\n"
+        "\n"
+        "    --server-remote ip\n"
+        "        Connect to remote scrcpy server at IPv4 directly without using adb tunnel.\n"
+        "        Port is set by --server-port.\n"
+        "\n"
+        "    --server-local ip\n"
+        "        Listen for incoming connection at IPv4 address. Scrcpy client\n"
+        "        plays role of a IP server.\n"
+        "        Port is set by --server-port.\n"
+        "\n"
+        "    --server-port value\n"
+        "        Port used by --server-remote or --server-local.\n"
+        "        Default is 27184\n"
         "\n"
         "Shortcuts:\n"
         "\n"
@@ -468,6 +483,9 @@ guess_record_format(const char *filename) {
 #define OPT_ROTATION               1015
 #define OPT_RENDER_DRIVER          1016
 #define OPT_NO_MIPMAPS             1017
+#define OPT_SERVER_REMOTE          1018
+#define OPT_SERVER_LOCAL           1019
+#define OPT_SERVER_PORT            1020
 
 bool
 scrcpy_parse_args(struct scrcpy_cli_args *args, int argc, char *argv[]) {
@@ -505,6 +523,9 @@ scrcpy_parse_args(struct scrcpy_cli_args *args, int argc, char *argv[]) {
         {"window-height",          required_argument, NULL, OPT_WINDOW_HEIGHT},
         {"window-borderless",      no_argument,       NULL,
                                                   OPT_WINDOW_BORDERLESS},
+        {"server-remote",          required_argument, NULL, OPT_SERVER_REMOTE},
+        {"server-local",           required_argument, NULL, OPT_SERVER_LOCAL},
+        {"server-port",            required_argument, NULL, OPT_SERVER_PORT},
         {NULL,                     0,                 NULL, 0  },
     };
 
@@ -638,6 +659,17 @@ scrcpy_parse_args(struct scrcpy_cli_args *args, int argc, char *argv[]) {
                 break;
             case OPT_NO_MIPMAPS:
                 opts->mipmaps = false;
+                break;
+            case OPT_SERVER_REMOTE:
+                opts->server_remote = inet_network(optarg);
+                break;
+            case OPT_SERVER_LOCAL:
+                opts->server_local = inet_network(optarg);
+                break;
+            case OPT_SERVER_PORT:
+                if (!parse_display_id(optarg, &opts->server_port)) {
+                    return false;
+                }
                 break;
             default:
                 // getopt prints the error message on stderr
