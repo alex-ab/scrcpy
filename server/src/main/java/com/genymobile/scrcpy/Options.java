@@ -12,6 +12,8 @@ public class Options {
     private boolean sendFrameMeta; // send PTS so that the client may record properly
     private boolean control;
     private int displayId;
+    private int port;
+    private String ip;
 
     public int getMaxSize() {
         return maxSize;
@@ -83,5 +85,21 @@ public class Options {
 
     public void setDisplayId(int displayId) {
         this.displayId = displayId;
+    }
+
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
+
+    public String getIp() {
+        return ip;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
     }
 }

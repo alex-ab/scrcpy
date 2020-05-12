@@ -7,6 +7,8 @@ import android.os.Build;
 import java.io.File;
 import java.io.IOException;
 
+import java.net.InetAddress;
+
 public final class Server {
 
     private static final String SERVER_PATH = "/data/local/tmp/scrcpy-server.jar";
@@ -19,7 +21,7 @@ public final class Server {
         Ln.i("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")");
         final Device device = new Device(options);
         boolean tunnelForward = options.isTunnelForward();
-        try (DesktopConnection connection = DesktopConnection.open(device, tunnelForward)) {
+        try (DesktopConnection connection = DesktopConnection.open(device, tunnelForward, options.getIp(), options.getPort())) {
             ScreenEncoder screenEncoder = new ScreenEncoder(options.getSendFrameMeta(), options.getBitRate(), options.getMaxFps());
 
             if (options.getControl()) {
@@ -79,8 +81,8 @@ public final class Server {
                     "The server version (" + BuildConfig.VERSION_NAME + ") does not match the client " + "(" + clientVersion + ")");
         }
 
-        if (args.length != 10) {
-            throw new IllegalArgumentException("Expecting 10 parameters");
+        if (args.length != 10 && args.length != 12) {
+            throw new IllegalArgumentException("Expecting 10 or 12 parameters");
         }
 
         Options options = new Options();
@@ -113,6 +115,17 @@ public final class Server {
         int displayId = Integer.parseInt(args[9]);
         options.setDisplayId(displayId);
 
+        if (args.length == 12) {
+            try {
+                InetAddress ip = InetAddress.getByName(args[10]);
+                options.setIp(ip.getHostAddress());
+            } catch (java.net.UnknownHostException e) {
+                throw new IllegalArgumentException("IP address invalid");
+            }
+
+            int port = Integer.parseInt(args[11]);
+            options.setPort(port);
+        }
         return options;
     }
 

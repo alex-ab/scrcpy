@@ -11,6 +11,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.net.InetAddress;
+
 public final class DesktopConnection implements Closeable {
 
     private static final int DEVICE_NAME_FIELD_LENGTH = 64;
@@ -24,12 +28,37 @@ public final class DesktopConnection implements Closeable {
     private final InputStream controlInputStream;
     private final OutputStream controlOutputStream;
 
+    private final Socket videoDirectSocket;
+    private final Socket controlDirectSocket;
+
+    private final boolean direct;
+
     private final ControlMessageReader reader = new ControlMessageReader();
     private final DeviceMessageWriter writer = new DeviceMessageWriter();
+
+    private DesktopConnection(Socket videoSocket, Socket controlSocket) throws IOException {
+        this.videoSocket = new LocalSocket();
+        this.controlSocket = new LocalSocket();
+
+        this.direct = true;
+
+        this.videoDirectSocket = videoSocket;
+        this.controlDirectSocket = controlSocket;
+
+        controlInputStream = controlDirectSocket.getInputStream();
+        controlOutputStream = controlDirectSocket.getOutputStream();
+        videoOutputStream = videoDirectSocket.getOutputStream();
+    }
 
     private DesktopConnection(LocalSocket videoSocket, LocalSocket controlSocket) throws IOException {
         this.videoSocket = videoSocket;
         this.controlSocket = controlSocket;
+
+        this.direct = false;
+
+        this.videoDirectSocket = new Socket();
+        this.controlDirectSocket = new Socket();
+
         controlInputStream = controlSocket.getInputStream();
         controlOutputStream = controlSocket.getOutputStream();
         videoOutputStream = videoSocket.getOutputStream();
@@ -44,6 +73,7 @@ public final class DesktopConnection implements Closeable {
     public static DesktopConnection open(Device device, boolean tunnelForward) throws IOException {
         LocalSocket videoSocket;
         LocalSocket controlSocket;
+
         if (tunnelForward) {
             LocalServerSocket localServerSocket = new LocalServerSocket(SOCKET_NAME);
             try {
@@ -70,6 +100,38 @@ public final class DesktopConnection implements Closeable {
         }
 
         DesktopConnection connection = new DesktopConnection(videoSocket, controlSocket);
+        Size videoSize = device.getScreenInfo().getVideoSize();
+        connection.send(Device.getDeviceName(), videoSize.getWidth(), videoSize.getHeight());
+
+        return connection;
+    }
+
+    public static DesktopConnection open(Device device, boolean tunnelForward, String ip_string, int port) throws IOException {
+        if (ip_string == null)
+            return open(device, tunnelForward);
+
+        InetAddress ip = InetAddress.getByName(ip_string);
+
+        Socket videoDirectSocket;
+        Socket controlDirectSocket;
+
+        if (tunnelForward) {
+            ServerSocket server = new ServerSocket(port);
+            try {
+                videoDirectSocket = server.accept();
+                // send one byte so the client may read() to detect a connection error
+                videoDirectSocket.getOutputStream().write(0);
+
+                controlDirectSocket = server.accept();
+            } finally {
+                server.close();
+            }
+        } else {
+            videoDirectSocket = new Socket(ip, port);
+            controlDirectSocket = new Socket(ip, port);
+        }
+
+        DesktopConnection connection = new DesktopConnection(videoDirectSocket, controlDirectSocket);
         Size videoSize = device.getScreenInfo().getVideoSize();
         connection.send(Device.getDeviceName(), videoSize.getWidth(), videoSize.getHeight());
         return connection;
