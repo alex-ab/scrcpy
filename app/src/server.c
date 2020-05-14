@@ -422,14 +422,17 @@ server_start(struct server *server, const char *serial,
         }
     }
 
+if (server->use_adb) {
     if (!push_server(serial)) {
         goto error1;
     }
+}
 
     if (!enable_tunnel_any_port(server, params->port_range)) {
         goto error1;
     }
 
+if (server->use_adb) {
     // server will connect to our server socket
     server->process = execute_server(server, params);
     if (server->process == PROCESS_NONE) {
@@ -449,6 +452,7 @@ server_start(struct server *server, const char *serial,
         cmd_simple_wait(server->process, NULL); // ignore exit code
         goto error2;
     }
+}
 
     server->tunnel_enabled = true;
 
